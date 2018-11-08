@@ -53,8 +53,8 @@ def jacobi_step(A, b, x):
 
 
 def quadratic_form(A, b, x):
-    # Compute quadratic form 1/2 xAx + xb
-    return (0.5 * np.einsum('i,ij,j->', x, A, x) + np.einsum('i,i->', x, b))
+    # Compute quadratic form 1/2 xAx - xb
+    return (0.5 * np.einsum('i,ij,j->', x, A, x) - np.einsum('i,i->', x, b))
 
 
 def relative_error_to_reference(x, x_ref):
@@ -91,46 +91,47 @@ def main():
         '# it.',
         '{:d}',
         kind='failure',
-        threshold=10,
-        comparison=operator.ge,
-        message='Maximum number of iterations ({threshold:d}) exceeded')
+        criterion=Criterion(
+            threshold=10,
+            comparison=operator.ge,
+            message='Maximum number of iterations ({threshold:d}) exceeded'))
 
     rnorm = Stat(
         '||r||_2',
         '{:.5E}',
         kind='success',
-        threshold=1.0e-4,
-        comparison=operator.le,
-        message='Residual norm below threshold {threshold:.1E}')
+        criterion=Criterion(
+            threshold=1.0e-4,
+            comparison=operator.le,
+            message='Residual norm below threshold {threshold:.1E}'))
 
     denergy = Stat(
         'abs(Delta E)',
         '{:.5E}',
         kind='success',
-        threshold=1.0e-5,
-        comparison=operator.le,
-        message='Pseudoenergy variation below threshold {threshold:.1E}')
+        criterion=Criterion(
+            threshold=1.0e-5,
+            comparison=operator.le,
+            message='Pseudoenergy variation below threshold {threshold:.1E}'))
 
     xdiffnorm = Stat(
         '||x_new - x_old||_2',
         '{:.5E}',
         kind='success',
-        threshold=1.0e-4,
-        comparison=operator.le,
-        message='2-norm of error below threshold {threshold:.1E}')
+        criterion=Criterion(
+            threshold=1.0e-4,
+            comparison=operator.le,
+            message='2-norm of error below threshold {threshold:.1E}'))
+
+    energy = Stat('E', '{:.5E}', kind='report')
 
     stats = {
-        'iteration counter': it_count,
         '2-norm of residual': rnorm,
         'absolute pseudoenergy difference': denergy,
-        '2-norm of error': xdiffnorm
+        '2-norm of error': xdiffnorm,
+        'E': energy,
+        'iteration counter': it_count
     }
-
-    #energy = Stat(
-    #    'pseudoenergy',
-    #    'E',
-    #    '{:.5E}',
-    #    kind='report')
 
     def stepper(iterate: Dict) -> Dict:
         # Update vector and statistics

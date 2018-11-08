@@ -1,4 +1,4 @@
-from collections import Iterator
+from collections import Iterator, OrderedDict
 from typing import Callable, Dict, List, Tuple
 
 
@@ -10,24 +10,22 @@ class Criterion:
         self.message = message.format(threshold=threshold)
 
     def compare(self, value):
-        return self.comparison(value[self.name], self.threshold)
+        return self.comparison(value, self.threshold)
 
 
 class Stat:
-    def __init__(self, header: str, fmt: str, kind: str, threshold: float,
-                 comparison: Callable, message: str) -> None:
+    def __init__(self,
+                 header: str,
+                 fmt: str,
+                 kind: str,
+                 criterion: Criterion = None) -> None:
         self.header = header
         self.fmt = fmt
         if kind not in ['failure', 'success', 'report']:
             raise RuntimeError('\'kind\' must be one of {}'.format(
                 ['failure', 'success', 'report']))
         self.kind = kind
-        self.threshold = threshold
-        self.comparison = comparison
-        self.message = message.format(threshold=threshold)
-
-    def compare(self, value) -> bool:
-        return self.comparison(value, self.threshold)
+        self.criterion = criterion
 
 
 def check_termination(composition: str, criteria: List,
@@ -75,10 +73,12 @@ def check_termination(what: str, criteria: Dict,
     terminate = False
     if what == 'failure':
         conds = {k: v for k, v in criteria.items() if v.kind == 'failure'}
-        terminate = any((conds[k].compare(value[k]) for k in conds.keys()))
+        terminate = any(
+            (conds[k].criterion.compare(value[k]) for k in conds.keys()))
     elif what == 'success':
         conds = {k: v for k, v in criteria.items() if v.kind == 'success'}
-        terminate = all((conds[k].compare(value[k]) for k in conds.keys()))
+        terminate = all(
+            (conds[k].criterion.compare(value[k]) for k in conds.keys()))
     else:
         raise ValueError(
             'Unknown check \'{:s}\'.\n Only \'failure\' and \'success\' are allowed.'.
@@ -92,11 +92,23 @@ class IterativeSolver(Iterator):
         self._niterations = start_guess['iteration counter']
         self._stepper = stepper
         self._iterate = start_guess
-        self._stats = stats
-        self._success_message = '\n'.join(
-            s.message for s in self._stats.values() if s.kind == 'success')
+        self._stats = self._sort_stats_by_kind(stats)
+        self._success_message = '\n'.join(s.criterion.message
+                                          for s in self._stats.values()
+                                          if s.kind == 'success')
         self._exception = exception
         print(self._header())
+
+    def _sort_stats_by_kind(self, stats: Dict) -> OrderedDict:
+        """
+        Sort stats dictionary in the failure, report, success order
+        """
+        tmp = OrderedDict(
+            {k: v
+             for k, v in stats.items() if v.kind == 'failure'})
+        tmp.update({k: v for k, v in stats.items() if v.kind == 'report'})
+        tmp.update({k: v for k, v in stats.items() if v.kind == 'success'})
+        return tmp
 
     def _header(self) -> str:
         nheaders = len(self._stats)
