@@ -1,7 +1,10 @@
-import operator
+from functools import partial
+from operator import ge, le
 
 import numpy as np
+import zarr
 from iterations import *
+from numcodecs import Blosc
 from numpy import linalg as LA
 
 
@@ -18,9 +21,11 @@ def jacobi(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
     DeltaE = E_new - E_old
     rnorm = compute_residual_norm(A, b, x)
     print('Iteration #    Residual norm         Delta E')
-    print('    {:4d}        {:.5E}       {:.5E}'.format(
-        it, rnorm, abs(DeltaE)))
     while it < max_it:
+        # Report
+        print('    {:4d}        {:.5E}       {:.5E}'.format(
+            it, rnorm, abs(DeltaE)))
+
         # Update solution vector
         x = jacobi_step(A, b, x)
         # Compute residual
@@ -28,10 +33,6 @@ def jacobi(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
         # Compute new pseudoenergy
         E_new = quadratic_form(A, b, x)
         DeltaE = E_new - E_old
-
-        # Report
-        print('    {:4d}        {:.5E}       {:.5E}'.format(
-            it + 1, rnorm, abs(DeltaE)))
 
         # Check convergence
         if rnorm < rtol and abs(DeltaE) < etol:
@@ -65,6 +66,27 @@ def compute_residual_norm(A, b, x):
     return LA.norm(b - np.einsum('ij,j->i', A, x))
 
 
+def stepper(A, b, iterate: Dict) -> Dict:
+    # Update vector and statistics
+    x_new = jacobi_step(A, b, iterate['x'])
+    E_new = quadratic_form(A, b, iterate['x'])
+    rnorm = compute_residual_norm(A, b, iterate['x'])
+    xdiffnorm = LA.norm(x_new - iterate['x'])
+    denergy = abs(E_new - iterate['E'])
+
+    # In-place update of dictionary
+    iterate['iteration counter'] += 1
+    iterate['x'] = x_new
+    iterate['E'] = E_new
+    iterate['2-norm of residual'] = rnorm
+    iterate['2-norm of error'] = xdiffnorm
+    iterate['absolute pseudoenergy difference'] = denergy
+
+
+def checkpointer(iterate: Dict):
+    zarr.save('data/jacobi.zarr', iterate['x'])
+
+
 def main():
     print('Experiments with linear solvers')
     dim = 1000
@@ -80,7 +102,7 @@ def main():
     print('Jacobi algorithm')
     x_jacobi = np.zeros_like(b)
     try:
-        x_jacobi = jacobi(A, b, rtol=1.0e-4, etol=1.0e-5, max_it=10)
+        x_jacobi = jacobi(A, b, rtol=1.0e-4, etol=1.0e-5, max_it=25)
     except:
         pass
     print('Jacobi relative error to reference {:.5E}\n'.format(
@@ -92,8 +114,8 @@ def main():
         '{:d}',
         kind='failure',
         criterion=Criterion(
-            threshold=10,
-            comparison=operator.ge,
+            threshold=25,
+            comparison=ge,
             message='Maximum number of iterations ({threshold:d}) exceeded'))
 
     rnorm = Stat(
@@ -102,8 +124,8 @@ def main():
         kind='success',
         criterion=Criterion(
             threshold=1.0e-4,
-            comparison=operator.le,
-            message='Residual norm below threshold {threshold:.1E}'))
+            comparison=le,
+            message='2-norm of residual below threshold {threshold:.1E}'))
 
     denergy = Stat(
         'abs(Delta E)',
@@ -111,7 +133,7 @@ def main():
         kind='success',
         criterion=Criterion(
             threshold=1.0e-5,
-            comparison=operator.le,
+            comparison=le,
             message='Pseudoenergy variation below threshold {threshold:.1E}'))
 
     xdiffnorm = Stat(
@@ -120,7 +142,7 @@ def main():
         kind='success',
         criterion=Criterion(
             threshold=1.0e-4,
-            comparison=operator.le,
+            comparison=le,
             message='2-norm of error below threshold {threshold:.1E}'))
 
     energy = Stat('E', '{:.5E}', kind='report')
@@ -133,40 +155,25 @@ def main():
         'iteration counter': it_count
     }
 
-    def stepper(iterate: Dict) -> Dict:
-        # Update vector and statistics
-        x_new = jacobi_step(A, b, iterate['x'])
-        E_new = quadratic_form(A, b, iterate['x'])
-        rnorm = compute_residual_norm(A, b, iterate['x'])
-        xdiffnorm = LA.norm(x_new - iterate['x'])
-        denergy = abs(E_new - iterate['E'])
-
-        # In-place update of dictionary
-        iterate['iteration counter'] += 1
-        iterate['x'] = x_new
-        iterate['E'] = E_new
-        iterate['2-norm of residual'] = rnorm
-        iterate['2-norm of error'] = xdiffnorm
-        iterate['absolute pseudoenergy difference'] = denergy
-
-        return iterate
-
     x_0 = np.zeros_like(b)
-    guess = {
-        'iteration counter': 0,
+    guess = Iterate({
         'x': x_0,
         'x old': x_0,
-        'E': quadratic_form(A, b, x_0)
-    }
-    jacobi2 = IterativeSolver(stepper, guess, stats, RuntimeError)
+        'E': quadratic_form(A, b, x_0),
+        '2-norm of residual': compute_residual_norm(A, b, x_0),
+        'absolute pseudoenergy difference': 0.0,
+        '2-norm of error': 0.0
+    })
+    jacobi_loose = IterativeSolver(
+        partial(stepper, A, b), guess, stats, RuntimeError, checkpointer)
 
     # First converge to a loose threshold
-    for _ in jacobi2:
+    for _ in jacobi_loose:
         pass
 
-    print('jacobi2._niterations ', jacobi2._niterations)
+    print('jacobi_loose.niterations ', jacobi_loose.niterations)
     print('Jacobi relative error to reference {:.5E}\n'.format(
-        relative_error_to_reference(jacobi2._iterate['x'], x_ref)))
+        relative_error_to_reference(jacobi_loose.iterate['x'], x_ref)))
 
 
 if __name__ == '__main__':
