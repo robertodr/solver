@@ -113,7 +113,10 @@ class IterativeSolver(Iterator):
             k: v
             for k, v in self._stats.items() if v.kind == 'success'
         }
+        # Print iterations header
         print(self._header())
+        # Print starting iterations statistics
+        print(self._stat_line())
 
     @property
     def niterations(self) -> int:
@@ -149,8 +152,6 @@ class IterativeSolver(Iterator):
              for k in self._stats.keys()})
 
     def __next__(self):
-        # Print iterations statistics
-        print(self._stat_line())
         try:
             k, failed = check_termination(or_, self._failure, self._iterate,
                                           False)
@@ -163,12 +164,14 @@ class IterativeSolver(Iterator):
             # Check for success
             _, succeeded = check_termination(and_, self._success,
                                              self._iterate, True)
+            # Print iterations statistics
+            print(self._stat_line())
             if succeeded:
-                print(self._success_message)
                 raise StopIteration
         except self._exception:
             raise
         finally:
             # Clean up/checkpoint actions after each iteration
             self._checkpointer(self._iterate)
-            pass
+            if succeeded:
+                print(self._success_message)

@@ -16,16 +16,15 @@ def jacobi(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
 
     it = 0
     # Compute pseudoenergy
+    E_old = 0.0
     E_new = quadratic_form(A, b, x)
-    E_old = E_new
     DeltaE = E_new - E_old
     rnorm = compute_residual_norm(A, b, x)
     print('Iteration #    Residual norm         Delta E')
+    # Report at start
+    print('    {:4d}        {:.5E}       {:.5E}'.format(
+        it, rnorm, abs(DeltaE)))
     while it < max_it:
-        # Report
-        print('    {:4d}        {:.5E}       {:.5E}'.format(
-            it, rnorm, abs(DeltaE)))
-
         # Update solution vector
         x = jacobi_step(A, b, x)
         # Compute residual
@@ -33,13 +32,20 @@ def jacobi(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
         # Compute new pseudoenergy
         E_new = quadratic_form(A, b, x)
         DeltaE = E_new - E_old
+        E_old = E_new
+
+        it += 1
 
         # Check convergence
         if rnorm < rtol and abs(DeltaE) < etol:
+            # Print last statistics before breaking out
+            print('    {:4d}        {:.5E}       {:.5E}'.format(
+                it, rnorm, abs(DeltaE)))
             break
 
-        it += 1
-        E_old = E_new
+        # Report
+        print('    {:4d}        {:.5E}       {:.5E}'.format(
+            it, rnorm, abs(DeltaE)))
     else:
         raise RuntimeError(
             'Maximum number of iterations ({0:d}) exceeded, but residual norm {1:.5E} still greater than threshold {2:.5E}'.
@@ -69,8 +75,8 @@ def compute_residual_norm(A, b, x):
 def stepper(A, b, iterate: Dict) -> Dict:
     # Update vector and statistics
     x_new = jacobi_step(A, b, iterate['x'])
-    E_new = quadratic_form(A, b, iterate['x'])
-    rnorm = compute_residual_norm(A, b, iterate['x'])
+    E_new = quadratic_form(A, b, x_new)
+    rnorm = compute_residual_norm(A, b, x_new)
     xdiffnorm = LA.norm(x_new - iterate['x'])
     denergy = abs(E_new - iterate['E'])
 
@@ -89,7 +95,7 @@ def checkpointer(iterate: Dict):
 
 def main():
     print('Experiments with linear solvers')
-    dim = 1000
+    dim = 50
     M = np.random.randn(dim, dim)
     # Make sure our matrix is SPD
     A = 0.5 * (M + M.transpose())
@@ -100,11 +106,7 @@ def main():
 
     # Jacobi method
     print('Jacobi algorithm')
-    x_jacobi = np.zeros_like(b)
-    try:
-        x_jacobi = jacobi(A, b, rtol=1.0e-4, etol=1.0e-5, max_it=25)
-    except:
-        pass
+    x_jacobi = jacobi(A, b, rtol=1.0e-4, etol=1.0e-5, max_it=25)
     print('Jacobi relative error to reference {:.5E}\n'.format(
         relative_error_to_reference(x_jacobi, x_ref)))
 
@@ -158,7 +160,6 @@ def main():
     x_0 = np.zeros_like(b)
     guess = Iterate({
         'x': x_0,
-        'x old': x_0,
         'E': quadratic_form(A, b, x_0),
         '2-norm of residual': compute_residual_norm(A, b, x_0),
         'absolute pseudoenergy difference': 0.0,
@@ -171,7 +172,7 @@ def main():
     for _ in jacobi_loose:
         pass
 
-    print('jacobi_loose.niterations ', jacobi_loose.niterations)
+    print('\njacobi_loose.niterations ', jacobi_loose.niterations)
     print('Jacobi relative error to reference {:.5E}\n'.format(
         relative_error_to_reference(jacobi_loose.iterate['x'], x_ref)))
 
