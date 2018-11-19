@@ -188,7 +188,8 @@ class IterativeSolver(Iterator):
 
         # Collate messages for success criteria
         self._success_message = '\n'.join(
-            s.criterion.message for s in self._stats['success'].values())
+            s.criterion.message
+            for s in self._stats['success'].values()) + '\n'
         # Print iterations header
         print(self._header())
         # Print starting iterations statistics
