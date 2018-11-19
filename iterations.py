@@ -1,4 +1,4 @@
-from collections import Iterator, MutableMapping, OrderedDict
+from collections import Iterator, MutableMapping
 from functools import reduce
 from operator import and_, or_
 from typing import Callable, Dict, List, Tuple
@@ -133,127 +133,6 @@ class Stat:
         return F'{self.header:s} {self.kind:s} {self._satisfied}'
 
 
-def sort_stats_by_kind(stats: Dict) -> Dict:
-    """
-    Generate dict-of-dicts for statistics.
-
-    Returns
-    -------
-    Dict[str, Dict]
-        A dict-of-dicts, where the key is the kind of the statistics in each dict.
-    """
-    failure = {}
-    report = {}
-    success = {}
-    for k, v in stats.items():
-        if v.kind == 'failure':
-            failure[k] = v
-        elif v.kind == 'success':
-            success[k] = v
-        else:
-            report[k] = v
-    return {'failure': failure, 'report': report, 'success': success}
-
-
-def check_termination(combinator: Callable, criteria: Dict, value: Iterate,
-                      initializer: bool) -> Tuple[str, bool]:
-    """
-    Checks termination
-
-    Parameters
-    ----------
-    combinator: Callable
-         Logic to apply to check termination
-    criteria: Dict
-         Dictionary of criteria to be checked
-    value: Iterate
-         Current iterate
-    initializer: bool
-         Base value of the comparison
-
-    Returns
-    -------
-    Tuple[str, bool]
-         A pair containing which criterion flipped `initializer` to `True`
-
-    Warning
-    -------
-    This function is general, you should use `check_failure` and `check_success`
-
-    Notes
-    -----
-    We want to decide, given one iterate and a list of criteria, whether these
-    are met or not. In addition, we also want to know which ones where met.
-    We classified criteria as "failure" and "success":
-      - When _any_ of the "failure" criteria is met, we terminate iterations
-        with an error message. Comparison predicates need to be composed
-        _disjunctively_. `combinator` is thus `operator.or_`, while
-        `initializer` is `False`. If multiple failing criteria are given, we
-        want to know which one caused `initializer` to flip from `False` to
-        `True`.
-      - When _all_ of the "success" criteria are met, we terminate iterations
-        with a success message. Comparison predicates need to be composed
-        _conjunctively_. `combinator` is thus `operator.and_`, while
-        `initializer` is `True`. Additionally, we want to know which criteria
-        were satisfied.
-
-    Due to the last requirement for "success" criteria, we cannot decide
-    lazily, i.e. exiting as soon as the `initializer` flips its value, neither
-    can we use just one loop.
-    Hence:
-      1. A first loop over the `criteria` dictionary will execute the `compare`
-         method of the `criterion` attribute and correspondingly set the
-        `satisfied` attribute.
-      2. A second loop, in the form of a reduction, combines the `satisfied`
-         attributes as prescribed by the `combinator` and `initializer`
-         parameters.
-    """
-
-    terminate = ('', initializer)
-    for k, v in criteria.items():
-        v.satisfied = v.criterion.compare(value[k])
-    return reduce(lambda x, y: (y[0], combinator(x[1], y[1].satisfied)),
-                  criteria.items(), terminate)
-
-
-def check_failure(criteria: Dict, value: Iterate) -> Tuple[str, bool]:
-    """
-    Specialization of `check_termination` for failure conditions
-
-    Parameters
-    ----------
-    criteria: Dict
-         Dictionary of criteria to be checked
-    value: Iterate
-         Current iterate
-
-    Returns
-    -------
-    Tuple[str, bool]
-         A pair containing which criterion flipped `initializer` to `True`
-    """
-    return check_termination(or_, criteria, value, False)
-
-
-def check_success(criteria: Dict, value: Iterate) -> bool:
-    """
-    Specialization of `check_termination` for success conditions
-
-    Parameters
-    ----------
-    criteria: Dict
-         Dictionary of criteria to be checked
-    value: Iterate
-         Current iterate
-
-    Returns
-    -------
-    bool
-         Whether computation succeeded or not
-    """
-    return check_termination(and_, criteria, value, True)[1]
-
-
 class IterativeSolver(Iterator):
     """
     Generic manager for iterative solvers.
@@ -374,3 +253,124 @@ class IterativeSolver(Iterator):
             self._checkpointer(self._iterate)
             if succeeded:
                 print(self._success_message)
+
+
+def sort_stats_by_kind(stats: Dict) -> Dict:
+    """
+    Generate dict-of-dicts for statistics.
+
+    Returns
+    -------
+    Dict[str, Dict]
+        A dict-of-dicts, where the key is the kind of the statistics in each dict.
+    """
+    failure = {}
+    report = {}
+    success = {}
+    for k, v in stats.items():
+        if v.kind == 'failure':
+            failure[k] = v
+        elif v.kind == 'success':
+            success[k] = v
+        else:
+            report[k] = v
+    return {'failure': failure, 'report': report, 'success': success}
+
+
+def check_termination(combinator: Callable, criteria: Dict, value: Iterate,
+                      initializer: bool) -> Tuple[str, bool]:
+    """
+    Checks termination
+
+    Parameters
+    ----------
+    combinator: Callable
+         Logic to apply to check termination
+    criteria: Dict
+         Dictionary of criteria to be checked
+    value: Iterate
+         Current iterate
+    initializer: bool
+         Base value of the comparison
+
+    Returns
+    -------
+    Tuple[str, bool]
+         A pair containing which criterion flipped `initializer` to `True`
+
+    Warning
+    -------
+    This function is general, you should use `check_failure` and `check_success`
+
+    Notes
+    -----
+    We want to decide, given one iterate and a list of criteria, whether these
+    are met or not. In addition, we also want to know which ones where met.
+    We classified criteria as "failure" and "success":
+      - When _any_ of the "failure" criteria is met, we terminate iterations
+        with an error message. Comparison predicates need to be composed
+        _disjunctively_. `combinator` is thus `operator.or_`, while
+        `initializer` is `False`. If multiple failing criteria are given, we
+        want to know which one caused `initializer` to flip from `False` to
+        `True`.
+      - When _all_ of the "success" criteria are met, we terminate iterations
+        with a success message. Comparison predicates need to be composed
+        _conjunctively_. `combinator` is thus `operator.and_`, while
+        `initializer` is `True`. Additionally, we want to know which criteria
+        were satisfied.
+
+    Due to the last requirement for "success" criteria, we cannot decide
+    lazily, i.e. exiting as soon as the `initializer` flips its value, neither
+    can we use just one loop.
+    Hence:
+      1. A first loop over the `criteria` dictionary will execute the `compare`
+         method of the `criterion` attribute and correspondingly set the
+        `satisfied` attribute.
+      2. A second loop, in the form of a reduction, combines the `satisfied`
+         attributes as prescribed by the `combinator` and `initializer`
+         parameters.
+    """
+
+    terminate = ('', initializer)
+    for k, v in criteria.items():
+        v.satisfied = v.criterion.compare(value[k])
+    return reduce(lambda x, y: (y[0], combinator(x[1], y[1].satisfied)),
+                  criteria.items(), terminate)
+
+
+def check_failure(criteria: Dict, value: Iterate) -> Tuple[str, bool]:
+    """
+    Specialization of `check_termination` for failure conditions
+
+    Parameters
+    ----------
+    criteria: Dict
+         Dictionary of criteria to be checked
+    value: Iterate
+         Current iterate
+
+    Returns
+    -------
+    Tuple[str, bool]
+         A pair containing which criterion flipped `initializer` to `True`
+    """
+    return check_termination(or_, criteria, value, False)
+
+
+def check_success(criteria: Dict, value: Iterate) -> bool:
+    """
+    Specialization of `check_termination` for success conditions
+
+    Parameters
+    ----------
+    criteria: Dict
+         Dictionary of criteria to be checked
+    value: Iterate
+         Current iterate
+
+    Returns
+    -------
+    bool
+         Whether computation succeeded or not
+    """
+    return check_termination(and_, criteria, value, True)[1]
