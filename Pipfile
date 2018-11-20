@@ -12,6 +12,7 @@ jupyterlab = "*"
 bokeh = "*"
 matplotlib = "*"
 zarr = "*"
+pytest ="*"
 
 
 [dev-packages]

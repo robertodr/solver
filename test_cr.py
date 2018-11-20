@@ -9,7 +9,7 @@ from numpy import linalg as LA
 from utils import *
 
 
-def cg(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
+def cr(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
     if x_0 is None:
         x = np.zeros_like(b)
     else:
@@ -31,8 +31,8 @@ def cg(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
     while it < max_it:
         # Update solution vector
         Ap = np.einsum('ij,j->i', A, p)
-        rtr = np.einsum('i,i', r, r)
-        alpha = rtr / np.einsum('i,i', p, Ap)
+        rtAr = np.einsum('i,ij,j', r, A, r)
+        alpha = rtAr / np.einsum('i,i', Ap, Ap)
         x = x + alpha * p
         # Compute residual and its norm
         r = r - alpha * Ap
@@ -43,7 +43,7 @@ def cg(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
         E_old = E_new
 
         # Update search direction
-        beta = np.einsum('i,i', r, r) / rtr
+        beta = np.einsum('i,ij,j', r, A, r) / rtAr
         p = r + beta * p
         it += 1
 
@@ -63,23 +63,23 @@ def cg(A, b, rtol=1.0e-8, etol=1.0e-8, max_it=25, x_0=None):
             format(max_it, rnorm, rtol))
     return x
 
-def cg_step(A, b, x, r, p):
+def cr_step(A, b, x, r, p):
     # Update solution vector
     Ap = np.einsum('ij,j->i', A, p)
-    rtr = np.einsum('i,i', r, r)
-    alpha = rtr / np.einsum('i,i', p, Ap)
+    rtAr = np.einsum('i,ij,j', r, A, r)
+    alpha = rtAr / np.einsum('i,i', Ap, Ap)
     x = x + alpha * p
     # Compute residual and its norm
     r = r - alpha * Ap
     # Update search direction
-    beta = np.einsum('i,i', r, r) / rtr
+    beta = np.einsum('i,ij,j', r, A, r) / rtAr
     p = r + beta * p
     return x, r, p
 
 
-def cg_stepper(A, b, iterate: Iterate):
+def cr_stepper(A, b, iterate: Iterate):
     # Update vector and statistics
-    x_new, r_new, p_new = cg_step(A, b, iterate['x'], iterate['r'], iterate['p'])
+    x_new, r_new, p_new = cr_step(A, b, iterate['x'], iterate['r'], iterate['p'])
     E_new = quadratic_form(A, b, x_new)
     rnorm = LA.norm(r_new)
     xdiffnorm = LA.norm(x_new - iterate['x'])
@@ -97,7 +97,7 @@ def cg_stepper(A, b, iterate: Iterate):
 
 
 def checkpointer(iterate: Iterate):
-    zarr.save('data/cg.zarr', iterate['x'])
+    zarr.save('data/cr.zarr', iterate['x'])
 
 
 def main():
@@ -111,12 +111,12 @@ def main():
     b = np.random.rand(dim)
     x_ref = LA.solve(A, b)
 
-    # Plain CG
-    x_cg = cg(A, b, rtol=1.0e-4, etol=1.0e-5, max_it=25)
-    print('CG relative error to reference {:.5E}\n'.format(
-        relative_error_to_reference(x_cg, x_ref)))
+    # Plain CR
+    x_cr = cr(A, b, rtol=1.0e-4, etol=1.0e-5, max_it=25)
+    print('CR relative error to reference {:.5E}\n'.format(
+        relative_error_to_reference(x_cr, x_ref)))
 
-    # CG with iterator
+    # CR with iterator
     it_count = Stat(
         '# it.',
         '{:d}',
@@ -173,15 +173,15 @@ def main():
         'absolute pseudoenergy difference': 0.0,
         '2-norm of error': 0.0
     })
-    cg_loose = IterativeSolver(
-        partial(cg_stepper, A, b), guess, stats, RuntimeError, checkpointer)
+    cr_loose = IterativeSolver(
+        partial(cr_stepper, A, b), guess, stats, RuntimeError, checkpointer)
 
-    for _ in cg_loose:
+    for _ in cr_loose:
         pass
 
-    print('\ncg_loose.niterations ', cg_loose.niterations)
-    print('Conjugate gradient relative error to reference {:.5E}\n'.format(
-        relative_error_to_reference(cg_loose.iterate['x'], x_ref)))
+    print('\ncr_loose.niterations ', cr_loose.niterations)
+    print('Conjugate residual relative error to reference {:.5E}\n'.format(
+        relative_error_to_reference(cr_loose.iterate['x'], x_ref)))
 
 
 if __name__ == '__main__':
