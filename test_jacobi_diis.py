@@ -46,6 +46,7 @@ def jacobi_diis(A,
         if it >= 1:
             x = diis.extrapolate()
             extrapolated = True
+            r = compute_residual(A, b, x)
 
         # Compute residual norm
         rnorm = LA.norm(r)
@@ -79,11 +80,18 @@ def jacobi_step(A, b, x):
     return (b - np.einsum('ij,j->i', O, x)) / D
 
 
-def stepper(A, b, iterate: Iterate):
+def stepper(A, b, diis, iterate: Iterate):
     # Update vector and statistics
     x_new = jacobi_step(A, b, iterate['x'])
+    r_new = compute_residual(A, b, x_new)
+
+    diis.append(x_new, r_new)
+    if iterate['iteration counter'] >= 1:
+        x_new = diis.extrapolate()
+        r_new = compute_residual(A, b, x_new)
+
     E_new = quadratic_form(A, b, x_new)
-    rnorm = compute_residual_norm(A, b, x_new)
+    rnorm = LA.norm(r_new)
     xdiffnorm = LA.norm(x_new - iterate['x'])
     denergy = abs(E_new - iterate['E'])
 
@@ -110,6 +118,8 @@ def main():
     A += dim * np.eye(dim)
     b = np.random.rand(dim)
     x_ref = LA.solve(A, b)
+    # DIIS extrapolation
+    diis = DIIS(max_history=8)
 
     # Jacobi method
     print('Jacobi-DIIS algorithm')
@@ -173,7 +183,7 @@ def main():
         '2-norm of error': 0.0
     })
     jacobi_loose = IterativeSolver(
-        partial(stepper, A, b), guess, stats, RuntimeError, checkpointer)
+        partial(stepper, A, b, diis), guess, stats, RuntimeError, checkpointer)
 
     for _ in jacobi_loose:
         pass
